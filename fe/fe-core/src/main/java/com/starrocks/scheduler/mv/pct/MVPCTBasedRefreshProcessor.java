@@ -135,7 +135,7 @@ public final class MVPCTBasedRefreshProcessor extends BaseMVRefreshProcessor {
         }
 
         // sync and check partitions of base tables
-        syncAndCheckPCTPartitions(taskRunContext);
+        mvPctRefreshSynchronizer.syncAndCheckPCTPartitions();
 
         // Clear-before-run: if the hook throws, the field is still nulled out on retry.
         final Runnable hook = this.afterSyncHook;
@@ -148,8 +148,14 @@ public final class MVPCTBasedRefreshProcessor extends BaseMVRefreshProcessor {
 
         // check to refresh partitions of mv and base tables
         try (Timer ignored = Tracers.watchScope("MVRefreshCheckMVToRefreshPartitions")) {
+<<<<<<< HEAD:fe/fe-core/src/main/java/com/starrocks/scheduler/mv/pct/MVPCTBasedRefreshProcessor.java
             updatePCTToRefreshMetas(taskRunContext);
             if (PCellUtils.isEmpty(pctMVToRefreshedPartitions)) {
+=======
+            mvPctRefreshSynchronizer.updatePCTToRefreshMetas(false);
+            PCTRefreshScope refreshScope = mvContext.getRefreshScope();
+            if (refreshScope == null || refreshScope.isEmpty()) {
+>>>>>>> d50506ad38 ([Refactor] Extract shared PCT partitioner flow (#72052)):fe/fe-core/src/main/java/com/starrocks/scheduler/mv/pct/MVPCTRefreshProcessor.java
                 return new ProcessExecPlan(Constants.TaskRunState.SKIPPED, null, null);
             }
         }
@@ -217,7 +223,12 @@ public final class MVPCTBasedRefreshProcessor extends BaseMVRefreshProcessor {
                     db.getFullName(), mv.getName(), Config.mv_refresh_try_lock_timeout_ms));
         }
 
+<<<<<<< HEAD:fe/fe-core/src/main/java/com/starrocks/scheduler/mv/pct/MVPCTBasedRefreshProcessor.java
         MVPCTRefreshPlanBuilder planBuilder = new MVPCTRefreshPlanBuilder(db, mv, mvContext, mvRefreshPartitioner);
+=======
+        PCTPredicateBuilder predicateBuilder = new PCTPredicateBuilder(mvPctRefreshPartitioner);
+        MVPCTRefreshPlanBuilder planBuilder = new MVPCTRefreshPlanBuilder(db, mv, mvContext, predicateBuilder);
+>>>>>>> d50506ad38 ([Refactor] Extract shared PCT partitioner flow (#72052)):fe/fe-core/src/main/java/com/starrocks/scheduler/mv/pct/MVPCTRefreshProcessor.java
         try {
             // Analyze and prepare a partition & Rebuild insert statement by
             // considering to-refresh partitions of ref tables/ mv
@@ -358,8 +369,8 @@ public final class MVPCTBasedRefreshProcessor extends BaseMVRefreshProcessor {
         return new PCTTableSnapshotInfo(baseTableInfo, table);
     }
 
-    public MVPCTRefreshPartitioner getMvRefreshPartitioner() {
-        return mvRefreshPartitioner;
+    public MVPCTRefreshPartitioner getMvPctRefreshPartitioner() {
+        return mvPctRefreshPartitioner;
     }
 
     @Override

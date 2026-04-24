@@ -34,6 +34,7 @@ import com.starrocks.common.util.PropertyAnalyzer;
 import com.starrocks.common.util.RuntimeProfile;
 import com.starrocks.common.util.UUIDUtil;
 import com.starrocks.common.util.concurrent.lock.LockTimeoutException;
+import com.starrocks.mv.refresh.pct.MVPCTRefreshSynchronizer;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.qe.DefaultCoordinator;
 import com.starrocks.qe.QeProcessorImpl;
@@ -992,8 +993,13 @@ public class PartitionBasedMvRefreshProcessorOlapTest extends MVTestBase {
         TaskRun taskRun = TaskRunBuilder.newBuilder(task).build();
         initAndExecuteTaskRun(taskRun);
 
+<<<<<<< HEAD
         MVPCTBasedRefreshProcessor processor = getPartitionBasedRefreshProcessor(taskRun);
         MVPCTRefreshPartitioner partitioner = processor.getMvRefreshPartitioner();
+=======
+        MVPCTRefreshProcessor processor = getPartitionBasedRefreshProcessor(taskRun);
+        MVPCTRefreshPartitioner partitioner = processor.getMvPctRefreshPartitioner();
+>>>>>>> d50506ad38 ([Refactor] Extract shared PCT partitioner flow (#72052))
         PCellSortedSet mvToRefreshPartitionNames = getMVPCellWithNames(mv, mv.getPartitionNames());
         partitioner.filterPartitionByRefreshNumber(mvToRefreshPartitionNames,
                 MaterializedView.PartitionRefreshStrategy.ADAPTIVE);
@@ -1024,8 +1030,13 @@ public class PartitionBasedMvRefreshProcessorOlapTest extends MVTestBase {
         TaskRun taskRun = TaskRunBuilder.newBuilder(task).build();
         initAndExecuteTaskRun(taskRun);
 
+<<<<<<< HEAD
         MVPCTBasedRefreshProcessor processor = getPartitionBasedRefreshProcessor(taskRun);
         MVPCTRefreshPartitioner partitioner = processor.getMvRefreshPartitioner();
+=======
+        MVPCTRefreshProcessor processor = getPartitionBasedRefreshProcessor(taskRun);
+        MVPCTRefreshPartitioner partitioner = processor.getMvPctRefreshPartitioner();
+>>>>>>> d50506ad38 ([Refactor] Extract shared PCT partitioner flow (#72052))
         partitioner.filterPartitionByRefreshNumber(getMVPCellWithNames(mv, mv.getPartitionNames()),
                 MaterializedView.PartitionRefreshStrategy.ADAPTIVE);
         MvTaskRunContext mvContext = processor.getMvContext();
@@ -1035,6 +1046,35 @@ public class PartitionBasedMvRefreshProcessorOlapTest extends MVTestBase {
     }
 
     @Test
+<<<<<<< HEAD
+=======
+    public void testSyncPartitionsFailsWhenTopologyIsNotPublished() throws Exception {
+        Database testDb = GlobalStateMgr.getCurrentState().getLocalMetastore().getDb("test");
+        MaterializedView mv = ((MaterializedView) GlobalStateMgr.getCurrentState().getLocalMetastore()
+                .getTable(testDb.getFullName(), "mv2"));
+        Task task = TaskBuilder.buildMvTask(mv, testDb.getFullName());
+        TaskRun taskRun = TaskRunBuilder.newBuilder(task).build();
+        initAndExecuteTaskRun(taskRun);
+
+        MVPCTRefreshProcessor processor = createProcessor(taskRun, mv);
+        processor.getMvContext().setPartitionTopology(null);
+        new MockUp<MVPCTRefreshRangePartitioner>() {
+            @Mock
+            public boolean syncAddOrDropPartitions() {
+                return true;
+            }
+        };
+
+        Method syncPartitions = MVPCTRefreshSynchronizer.class.getDeclaredMethod("syncPartitions");
+        syncPartitions.setAccessible(true);
+        InvocationTargetException exception = Assertions.assertThrows(InvocationTargetException.class,
+                () -> syncPartitions.invoke(new MVPCTRefreshSynchronizer(processor)));
+        Assertions.assertInstanceOf(DmlException.class, exception.getCause());
+        Assertions.assertTrue(exception.getCause().getMessage().contains("partition topology was not published"));
+    }
+
+    @Test
+>>>>>>> d50506ad38 ([Refactor] Extract shared PCT partitioner flow (#72052))
     public void testFilterListPartitionByAdaptiveRefreshNumber() throws Exception {
 
         String mvName = "mv_with_test_refresh_list_partition";
@@ -1068,8 +1108,13 @@ public class PartitionBasedMvRefreshProcessorOlapTest extends MVTestBase {
         TaskRun taskRun = TaskRunBuilder.newBuilder(task).build();
         initAndExecuteTaskRun(taskRun);
 
+<<<<<<< HEAD
         MVPCTBasedRefreshProcessor processor = getPartitionBasedRefreshProcessor(taskRun);
         MVPCTRefreshPartitioner partitioner = processor.getMvRefreshPartitioner();
+=======
+        MVPCTRefreshProcessor processor = getPartitionBasedRefreshProcessor(taskRun);
+        MVPCTRefreshPartitioner partitioner = processor.getMvPctRefreshPartitioner();
+>>>>>>> d50506ad38 ([Refactor] Extract shared PCT partitioner flow (#72052))
         partitioner.filterPartitionByRefreshNumber(getMVPCellWithNames(mv, mv.getPartitionNames()),
                 MaterializedView.PartitionRefreshStrategy.ADAPTIVE);
         MvTaskRunContext mvContext = processor.getMvContext();
@@ -1120,8 +1165,13 @@ public class PartitionBasedMvRefreshProcessorOlapTest extends MVTestBase {
         mv.getTableProperty().getProperties().put(PropertyAnalyzer.PROPERTIES_PARTITION_REFRESH_NUMBER, "1");
         mv.getTableProperty().setPartitionRefreshNumber(1);
 
+<<<<<<< HEAD
         MVPCTBasedRefreshProcessor processor = createProcessor(taskRun, mv);
         MVPCTRefreshPartitioner partitioner = processor.getMvRefreshPartitioner();
+=======
+        MVPCTRefreshProcessor processor = createProcessor(taskRun, mv);
+        MVPCTRefreshPartitioner partitioner = processor.getMvPctRefreshPartitioner();
+>>>>>>> d50506ad38 ([Refactor] Extract shared PCT partitioner flow (#72052))
         Set<String> allPartitions = new HashSet<>(mv.getPartitionNames());
 
         // ascending refresh
@@ -2849,7 +2899,8 @@ public class PartitionBasedMvRefreshProcessorOlapTest extends MVTestBase {
                     MVPCTBasedRefreshProcessor processor =
                             (MVPCTBasedRefreshProcessor) mvTaskRunProcessor.getMVRefreshProcessor();
 
-                    Set<String> result = processor.getPCTMVToRefreshedPartitions(false).getPartitionNames();
+                    Set<String> result = new MVPCTRefreshSynchronizer(processor)
+                            .getPCTMVToRefreshedPartitions(false, false).getPartitionNames();
                     Assertions.assertTrue(result.isEmpty());
                 });
     }
@@ -2892,7 +2943,8 @@ public class PartitionBasedMvRefreshProcessorOlapTest extends MVTestBase {
                     MVPCTBasedRefreshProcessor mvRefreshProcessor =
                             (MVPCTBasedRefreshProcessor) processor.getMVRefreshProcessor();
                     MvTaskRunContext mvTaskRunContext = new MvTaskRunContext(taskRunContext);
-                    Set<String> result = mvRefreshProcessor.getPCTMVToRefreshedPartitions(false).getPartitionNames();
+                    Set<String> result = new MVPCTRefreshSynchronizer(mvRefreshProcessor)
+                            .getPCTMVToRefreshedPartitions(false, false).getPartitionNames();
                     Assertions.assertFalse(result.isEmpty());
                     Set<String> expect = ImmutableSet.of("p0", "p1", "p2", "p3", "p4");
                     Assertions.assertEquals(expect, result);

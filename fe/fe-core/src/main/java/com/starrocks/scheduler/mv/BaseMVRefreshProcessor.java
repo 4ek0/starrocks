@@ -20,7 +20,6 @@ import com.google.common.base.Stopwatch;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.util.concurrent.Uninterruptibles;
 import com.starrocks.catalog.BaseTableInfo;
 import com.starrocks.catalog.Column;
 import com.starrocks.catalog.Database;
@@ -35,8 +34,6 @@ import com.starrocks.common.AnalysisException;
 import com.starrocks.common.Config;
 import com.starrocks.common.MaterializedViewExceptions;
 import com.starrocks.common.Pair;
-import com.starrocks.common.profile.Timer;
-import com.starrocks.common.profile.Tracers;
 import com.starrocks.common.tvr.TvrTableSnapshot;
 import com.starrocks.common.tvr.TvrVersionRange;
 import com.starrocks.common.util.DebugUtil;
@@ -47,6 +44,8 @@ import com.starrocks.common.util.concurrent.lock.LockType;
 import com.starrocks.common.util.concurrent.lock.Locker;
 import com.starrocks.connector.PartitionUtil;
 import com.starrocks.metric.IMaterializedViewMetricsEntity;
+import com.starrocks.mv.refresh.pct.MVPCTRefreshPlanner;
+import com.starrocks.mv.refresh.pct.MVPCTRefreshSynchronizer;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.qe.SessionVariable;
 import com.starrocks.scheduler.Constants;
@@ -110,7 +109,9 @@ public abstract class BaseMVRefreshProcessor {
     protected final Logger logger;
     // Collect all bases tables of the mv to be updated meta after mv refresh success.
     // format :     table id -> <base table info, snapshot table>
-    protected final MVPCTRefreshPartitioner mvRefreshPartitioner;
+    protected final MVPCTRefreshPartitioner mvPctRefreshPartitioner;
+    protected final MVPCTRefreshPlanner mvPctRefreshPlanner;
+    protected final MVPCTRefreshSynchronizer mvPctRefreshSynchronizer;
     protected final MVRefreshParams mvRefreshParams;
     // current refresh mode, can be changed in the refresh's runtime for `auto` mode
     protected MaterializedView.RefreshMode currentRefreshMode;
@@ -151,7 +152,9 @@ public abstract class BaseMVRefreshProcessor {
         this.logger = MVTraceUtils.getLogger(mv, clazz);
         this.mvRefreshParams = new MVRefreshParams(mv, mvContext.getProperties());
         // prepare mv refresh partitioner
-        this.mvRefreshPartitioner = buildMvRefreshPartitioner(mv, mvContext, mvRefreshParams);
+        this.mvPctRefreshPartitioner = buildMvRefreshPartitioner(mv, mvContext, mvRefreshParams);
+        this.mvPctRefreshPlanner = new MVPCTRefreshPlanner(mvPctRefreshPartitioner);
+        this.mvPctRefreshSynchronizer = new MVPCTRefreshSynchronizer(this);
         this.currentRefreshMode = refreshMode;
         this.isEnableExternalTablePreciseRefresh = isEnableExternalTablePreciseRefresh();
         this.snapshotBaseTables = refreshRuntimeState.getSnapshotBaseTables();
@@ -213,6 +216,38 @@ public abstract class BaseMVRefreshProcessor {
         return mvRefreshParams;
     }
 
+    public Database getDb() {
+        return db;
+    }
+
+    public MaterializedView getMv() {
+        return mv;
+    }
+
+    public IMaterializedViewMetricsEntity getMvEntity() {
+        return mvEntity;
+    }
+
+    public Logger getLogger() {
+        return logger;
+    }
+
+    public MVPCTRefreshPartitioner getMvPctRefreshPartitioner() {
+        return mvPctRefreshPartitioner;
+    }
+
+    public MVPCTRefreshPlanner getMvPctRefreshPlanner() {
+        return mvPctRefreshPlanner;
+    }
+
+    public Map<Long, BaseTableSnapshotInfo> getSnapshotBaseTables() {
+        return snapshotBaseTables;
+    }
+
+    public boolean isExternalTablePreciseRefreshEnabled() {
+        return isEnableExternalTablePreciseRefresh;
+    }
+
     /**
      * Get the retry times for the mv refresh processor.
      *
@@ -251,7 +286,7 @@ public abstract class BaseMVRefreshProcessor {
         return nextTaskRun;
     }
 
-    protected void setSnapshotBaseTables(Map<Long, BaseTableSnapshotInfo> snapshotBaseTables) {
+    public void setSnapshotBaseTables(Map<Long, BaseTableSnapshotInfo> snapshotBaseTables) {
         refreshRuntimeState.replaceSnapshotBaseTables(snapshotBaseTables);
     }
 
@@ -262,7 +297,7 @@ public abstract class BaseMVRefreshProcessor {
 
     // True when this task run owns the persistent pinning record — the fallback first batch right
     // after afterSyncHook installs us, and every subsequent batch of the same job.
-    protected boolean isPinnedMode() {
+    public boolean isPinnedMode() {
         String owner = mv.getRefreshScheme().getAsyncRefreshContext().getTempTvrOwnerStartTaskRunId();
         return owner != null && owner.equals(getStartTaskRunId());
     }
@@ -424,6 +459,7 @@ public abstract class BaseMVRefreshProcessor {
         return table.isHiveTable() || table.isHudiTable();
     }
 
+<<<<<<< HEAD:fe/fe-core/src/main/java/com/starrocks/scheduler/mv/BaseMVRefreshProcessor.java
     private boolean shouldSyncPartitionsAfterExternalRefresh(int retryNum) {
         if (!isEnableExternalTablePreciseRefresh || retryNum > 1) {
             return true;
@@ -559,6 +595,8 @@ public abstract class BaseMVRefreshProcessor {
         updatePCTToRefreshMetas(taskRunContext, false);
     }
 
+=======
+>>>>>>> d50506ad38 ([Refactor] Extract shared PCT partitioner flow (#72052)):fe/fe-core/src/main/java/com/starrocks/scheduler/mv/MVRefreshProcessor.java
     /**
      * Build an AST for insert stmt
      *
@@ -635,7 +673,35 @@ public abstract class BaseMVRefreshProcessor {
         return this.mvContext.getStatus().getMvTaskRunExtraMessage();
     }
 
-    protected void refreshExternalTable(Map<BaseTableSnapshotInfo, PCellSortedSet> baseTableCandidatePartitions) {
+    public void updateCurrentRefreshParamsIntoTaskRun() {
+        updateTaskRunStatus(status -> {
+            status.getMvTaskRunExtraMessage().setForceRefresh(mvRefreshParams.isForce());
+            status.getMvTaskRunExtraMessage().setPartitionStart(mvRefreshParams.getRangeStart());
+            status.getMvTaskRunExtraMessage().setPartitionEnd(mvRefreshParams.getRangeEnd());
+        });
+    }
+
+    public void applyPCTRefreshScope(PCTRefreshScope refreshScope) {
+        mvContext.setRefreshScope(refreshScope);
+        pctMVToRefreshedPartitions = refreshScope.getMvPartitionsToRefresh();
+        pctRefTableRefreshPartitions = refreshScope.getRefTableRefreshPartitions();
+        pctRefTablePartitionNames = refreshScope.getRefTablePartitionNames();
+    }
+
+    public PCTRefreshScope buildPCTRefreshScope(PCellSortedSet mvPartitionsToRefresh) {
+        return pctRefreshScopeCalculator.buildScope(
+                mvContext.getPartitionTopology(),
+                snapshotBaseTables,
+                mvPartitionsToRefresh,
+                mvRefreshParams.isCompleteRefresh(),
+                !mvPctRefreshPartitioner.getMVToRefreshPotentialPartitions().isEmpty());
+    }
+
+    public void increaseRefreshRetryMetaCount(long delta) {
+        mvEntity.increaseRefreshRetryMetaCount(delta);
+    }
+
+    public void refreshExternalTable(Map<BaseTableSnapshotInfo, PCellSortedSet> baseTableCandidatePartitions) {
         final List<Pair<Table, BaseTableInfo>> toRepairTables = new ArrayList<>();
         // use it if refresh external table fails
         final ConnectContext connectContext = mvContext.getCtx();
@@ -729,7 +795,7 @@ public abstract class BaseMVRefreshProcessor {
      * @return: the deduplicated databases of the materialized view's base tables,
      * throw exception if the database does not exist.
      */
-    protected LockParams collectDatabases() {
+    public LockParams collectDatabases() {
         final LockParams lockParams = new LockParams();
         final ConnectContext connectContext = mvContext.getCtx();
         for (BaseTableInfo baseTableInfo : mv.getBaseTableInfos()) {
@@ -815,6 +881,7 @@ public abstract class BaseMVRefreshProcessor {
         return tables;
     }
 
+<<<<<<< HEAD:fe/fe-core/src/main/java/com/starrocks/scheduler/mv/BaseMVRefreshProcessor.java
     /**
      * @param tentative if true, this is a tentative computation for candidate estimation
      *                  (isForce() returns true to get all partitions, task run status is not updated).
@@ -967,6 +1034,10 @@ public abstract class BaseMVRefreshProcessor {
 
     protected void updatePCTMVToRefreshInfoIntoTaskRun(PCellSortedSet finalMvToRefreshedPartitions,
                                                        PCellSetMapping finalRefTablePartitionNames) {
+=======
+    public void updatePCTMVToRefreshInfoIntoTaskRun(PCellSortedSet finalMvToRefreshedPartitions,
+                                                    PCellSetMapping finalRefTablePartitionNames) {
+>>>>>>> d50506ad38 ([Refactor] Extract shared PCT partitioner flow (#72052)):fe/fe-core/src/main/java/com/starrocks/scheduler/mv/MVRefreshProcessor.java
         updateTaskRunStatus(status -> {
             MVTaskRunExtraMessage extraMessage = status.getMvTaskRunExtraMessage();
             extraMessage.setMvPartitionsToRefresh(finalMvToRefreshedPartitions.getPartitionNames());

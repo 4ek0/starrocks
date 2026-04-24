@@ -49,7 +49,6 @@ import com.starrocks.sql.common.DmlException;
 import com.starrocks.sql.common.PCellSetMapping;
 import com.starrocks.sql.common.PCellSortedSet;
 import com.starrocks.sql.common.PCellWithName;
-import com.starrocks.sql.common.SyncPartitionUtils;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -219,6 +218,7 @@ public abstract class MVPCTRefreshPartitioner {
     }
 
     /**
+<<<<<<< HEAD
      * Calculate the associated potential partitions to refresh according to the partitions to refresh.
      * NOTE: This must be called after filterMVToRefreshPartitions, otherwise it may lose some potential to-refresh mv partitions
      * which will cause filtered insert load.
@@ -252,6 +252,8 @@ public abstract class MVPCTRefreshPartitioner {
     }
 
     /**
+=======
+>>>>>>> d50506ad38 ([Refactor] Extract shared PCT partitioner flow (#72052))
      * Filter mv to refresh partitions by some properties, like auto_partition_refresh_number.
      * @param mvToRefreshedPartitions: partitions to refresh for materialized view
      */
@@ -259,6 +261,7 @@ public abstract class MVPCTRefreshPartitioner {
         // do nothing by default
     }
 
+<<<<<<< HEAD
     /**
      * @return the partitions to refresh for materialized view
      */
@@ -356,6 +359,15 @@ public abstract class MVPCTRefreshPartitioner {
         }
         logger.info("after filterPartitionByAdaptive, partitionsToRefresh: {}",
                 mvToRefreshedPartitions);
+=======
+    @VisibleForTesting
+    public PCellSortedSet getMVToRefreshPotentialPartitions() {
+        return PCellSortedSet.of(mvToRefreshPotentialPartitions);
+    }
+
+    public void addMVToRefreshPotentialPartitions(PCellSortedSet potentialPartitions) {
+        mvToRefreshPotentialPartitions.addAll(potentialPartitions);
+>>>>>>> d50506ad38 ([Refactor] Extract shared PCT partitioner flow (#72052))
     }
 
     /**
@@ -476,6 +488,30 @@ public abstract class MVPCTRefreshPartitioner {
         // An external table is not supported to refresh by partition.
         return ConnectorPartitionTraits.isSupportPCTRefresh(baseTable.getType()) &&
                 !MaterializedViewAnalyzer.isExternalTableFromResource(baseTable);
+    }
+
+    public static boolean isAdaptiveRefreshSupported(Table.TableType tableType) {
+        return SUPPORTED_TABLE_TYPES_FOR_ADAPTIVE_MV_REFRESH.contains(tableType);
+    }
+
+    public Logger getLogger() {
+        return logger;
+    }
+
+    public MvTaskRunContext getMvContext() {
+        return mvContext;
+    }
+
+    public Database getDb() {
+        return db;
+    }
+
+    public MaterializedView getMv() {
+        return mv;
+    }
+
+    public MVRefreshParams getMvRefreshParams() {
+        return mvRefreshParams;
     }
 
     /**
@@ -645,7 +681,7 @@ public abstract class MVPCTRefreshPartitioner {
      * @param toRefreshPartitions : the need to refresh materialized view partition names
      * @return : the corresponding ref base table partition names to the materialized view partition names
      */
-    protected Map<Table, PCellSortedSet> getBasePartitionNamesByMVPartitionNames(PCellSortedSet toRefreshPartitions) {
+    public Map<Table, PCellSortedSet> getBasePartitionNamesByMVPartitionNames(PCellSortedSet toRefreshPartitions) {
         Map<Table, PCellSortedSet> result = new HashMap<>();
         Map<String, Map<Table, PCellSortedSet>> mvRefBaseTablePartitionMaps =
                 mvContext.getMvRefBaseTableIntersectedPartitions();
@@ -730,7 +766,7 @@ public abstract class MVPCTRefreshPartitioner {
         }
     }
 
-    protected Map<Table, PCellSortedSet> toBaseTableWithSortedSet(Map<Table, PCellSortedSet> baseToPartitionNames) {
+    public Map<Table, PCellSortedSet> toBaseTableWithSortedSet(Map<Table, PCellSortedSet> baseToPartitionNames) {
         Map<Table, PCellSortedSet> result = new HashMap<>();
         Map<Table, PCellSortedSet> refBaseTableRangePartitionMap = mvContext.getRefBaseTableToCellMap();
         for (Map.Entry<Table, PCellSortedSet> entry : baseToPartitionNames.entrySet()) {
