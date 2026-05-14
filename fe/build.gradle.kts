@@ -75,12 +75,7 @@ subprojects {
         set("protobuf-java.version", "3.25.5")
         set("puppycrawl.version", "10.21.1")
         set("spark.version", "3.5.7")
-<<<<<<< HEAD
         set("staros.version", "3.5-rc3")
-=======
-        set("staros.version", "4.0.0")
-        set("thrift.version", "0.23.0")
->>>>>>> 98f654c85b ([BugFix][CVE] bump libthrift to 0.23.0 (#73243))
         set("tomcat.version", "8.5.70")
         // var sync end
     }
@@ -216,11 +211,7 @@ subprojects {
             implementation("org.apache.spark:spark-core_2.12:${project.ext["spark.version"]}")
             implementation("org.apache.spark:spark-launcher_2.12:${project.ext["spark.version"]}")
             implementation("org.apache.spark:spark-sql_2.12:${project.ext["spark.version"]}")
-<<<<<<< HEAD
-            implementation("org.apache.thrift:libthrift:0.20.0")
-=======
-            implementation("org.apache.thrift:libthrift:${project.ext["thrift.version"]}")
->>>>>>> 98f654c85b ([BugFix][CVE] bump libthrift to 0.23.0 (#73243))
+            implementation("org.apache.thrift:libthrift:0.23.0")
             implementation("org.apache.velocity:velocity-engine-core:2.4.1")
             implementation("org.bouncycastle:bcpkix-jdk18on:${project.ext["bouncycastle.version"]}")
             implementation("org.bouncycastle:bcprov-jdk18on:${project.ext["bouncycastle.version"]}")
