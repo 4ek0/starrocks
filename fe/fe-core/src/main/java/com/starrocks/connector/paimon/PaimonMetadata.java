@@ -250,7 +250,7 @@ public class PaimonMetadata implements ConnectorMetadata {
         try {
             // get database from paimon catalog to see if the database exists
             paimonNativeCatalog.getDatabase(dbName);
-            Database db = new Database(CONNECTOR_ID_GENERATOR.getNextId().asInt(), dbName);
+            Database db = new Database(CONNECTOR_ID_GENERATOR.getNextId().asLong(), dbName);
             databases.put(dbName, db);
             return db;
         } catch (Catalog.DatabaseNotExistException e) {
@@ -291,6 +291,46 @@ public class PaimonMetadata implements ConnectorMetadata {
         return table;
     }
 
+<<<<<<< HEAD
+=======
+    public Table getView(String dbName, String viewName) {
+        Identifier identifier = new Identifier(dbName, viewName);
+        if (tables.containsKey(identifier)) {
+            return tables.get(identifier);
+        }
+        org.apache.paimon.view.View paimonNativeView;
+        try {
+            paimonNativeView = paimonNativeCatalog.getView(new Identifier(dbName, viewName));
+        } catch (Catalog.ViewNotExistException e) {
+            LOG.error("Paimon view {}.{} does not exist.", dbName, viewName, e);
+            return null;
+        }
+        PaimonView view = getPaimonView(this.catalogName, dbName, viewName, paimonNativeView);
+        tables.put(identifier, view);
+        return view;
+    }
+
+    private PaimonView getPaimonView(String catalogName, String dbName, String viewName, View paimonNativeView) {
+        List<DataField> fields = paimonNativeView.rowType().getFields();
+        List<Column> fullSchema = ColumnTypeConverter.fromPaimonSchemas(fields);
+        String comment = "";
+        Optional<String> commentOptional = paimonNativeView.comment();
+        if (commentOptional.isPresent()) {
+            comment = commentOptional.get();
+        }
+        String query;
+        if (paimonNativeView.dialects().containsKey(VIEW_DIALECTS_KEY)) {
+            query = paimonNativeView.dialects().get(VIEW_DIALECTS_KEY);
+        } else {
+            query = paimonNativeView.query();
+        }
+        PaimonView view = new PaimonView(CONNECTOR_ID_GENERATOR.getNextId().asLong(),
+                catalogName, dbName, viewName, fullSchema, query);
+        view.setComment(comment);
+        return view;
+    }
+
+>>>>>>> ac52046e7c ([BugFix] Use long for ConnectorTableId to avoid int overflow producing negative IDs (#73344))
     @Override
     public TvrVersionRange getTableVersionRange(String dbName, Table table,
                                                 Optional<ConnectorTableVersion> startVersion,
